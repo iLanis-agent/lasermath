@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Laser math - settings, kerf fit, and why it failed</title>
+<style>
+:root{--bg:#f4f1ec;--card:#fff;--ink:#262019;--mut:#6d6558;--tl:#b3541e;--ok:#e3f1e4;--oktx:#1e6b34;--bad:#fbe4e0;--badtx:#a03423;--warn:#fdf0dc;--warntx:#8a5a13}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 -apple-system,Segoe UI,Roboto,sans-serif}
+main{max-width:1180px;margin:0 auto;padding:26px 16px 60px}
+.hero{max-width:760px;margin:8px auto 18px;text-align:center}
+.hero p{color:var(--mut)}
+.warn{max-width:1180px;margin:0 auto 18px;padding:13px 18px;border:2px solid #a03423;border-radius:12px;background:#fdf3f2;color:#7a1a1a;font-size:14px;line-height:1.5}
+.warn strong{color:#5c1010}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px}
+.card{background:var(--card);border-radius:12px;padding:18px;box-shadow:0 1px 4px rgba(0,0,0,.08)}
+.card h2{margin:0 0 12px;font-size:17px}
+label{display:block;font-size:13px;color:var(--mut);margin-top:10px}
+input,select{width:100%;padding:10px;border:1px solid #d8d0c2;border-radius:8px;font-size:15px;margin-top:3px;background:#fff}
+button{margin-top:14px;width:100%;padding:11px;border:0;border-radius:9px;background:var(--tl);color:#fff;font-size:15px;font-weight:600;cursor:pointer}
+.big{font-size:34px;font-weight:700;margin:14px 0 2px}
+.sub{color:var(--mut);font-size:13px;margin-bottom:10px}
+.pill{display:inline-block;border-radius:20px;padding:6px 12px;font-size:13px;font-weight:600;margin:6px 0}
+.pill.ok{background:var(--ok);color:var(--oktx)}
+.pill.bad{background:var(--bad);color:var(--badtx)}
+.pill.warn{background:var(--warn);color:var(--warntx)}
+table{width:100%;border-collapse:collapse;font-size:14px;margin-top:10px}
+td{padding:7px 0;border-bottom:1px solid #eee5d6}
+td:last-child{text-align:right;font-weight:600}
+.note{font-size:12.5px;color:var(--mut);margin-top:14px}
+.err{color:var(--badtx);font-weight:600;margin-top:10px}
+a{color:var(--tl)}
+</style>
+</head>
+<body>
+<main>
+<div class="hero">
+<p>The group thread says "3mm birch: 300 mm/min, one pass." That was his laser, his plywood batch, his air assist. Kerf geometry is exact; settings are a starting point you earn on scrap. Run yours.</p>
+</div>
+<div class="warn"><strong>Fire and fume boundary:</strong> these settings are illustrative starting points from published community tables, labeled - not a clearance to run. Lasers start fires: never run one unattended, keep an extinguisher in reach, and ventilate. Never cut vinyl or PVC - it releases chlorine gas. If you see flame at the cut, stop.</div>
+<div class="grid">
+<div class="card">
+<h2>Your cut</h2>
+<label>Material</label>
+<select id="m_sel"></select>
+<label>Thickness (mm)</label>
+<input id="m_t" type="number" value="3" min="0" step="0.5">
+<label>Laser power (watts)</label>
+<input id="m_w" type="number" value="10" min="0">
+<button id="m_go">Compute the settings</button>
+<div class="big" id="m_speed">-</div>
+<div class="sub">mm/min starting speed (labeled guidance)</div>
+<div id="m_pill"></div>
+<table>
+<tr><td>passes</td><td id="m_passes">-</td></tr>
+<tr><td>per pass</td><td id="m_per">-</td></tr>
+</table>
+<p class="note" id="m_note"></p>
+</div>
+<div class="card">
+<h2>Kerf fit</h2>
+<label>Measured kerf (mm)</label>
+<input id="k_k" type="number" value="0.15" min="0" step="0.01">
+<label>Fit kind</label>
+<select id="k_kind">
+<option value="box">box / finger joint</option>
+<option value="inlay">inlay</option>
+<option value="press">press-fit hole</option>
+</select>
+<button id="k_go">Compute the compensation</button>
+<div class="big" id="k_big">-</div>
+<div class="sub">offset per edge (exact geometry)</div>
+<p class="note" id="k_note"></p>
+</div>
+<div class="card">
+<h2>Why it failed</h2>
+<label>Symptom</label>
+<select id="d_s">
+<option value="incomplete">didn't cut through</option>
+<option value="charred">charred edges</option>
+<option value="flames">flames at the cut</option>
+<option value="wavy">wavy lines</option>
+</select>
+<label>Power (watts)</label>
+<input id="d_w" type="number" value="10" min="0">
+<label>Speed (mm/min)</label>
+<input id="d_v" type="number" value="500" min="0">
+<label>Passes</label>
+<input id="d_p" type="number" value="1" min="0">
+<button id="d_go">Diagnose it</button>
+<div class="big" id="d_big">-</div>
+<div class="sub">likely cause (labeled guidance)</div>
+<p class="note" id="d_note"></p>
+</div>
+</div>
+<p class="note">Kerf compensation is exact geometry. Speed and passes are a labeled model from published community tables at a 10W reference class - your optics, air assist and material batch move the real numbers. <a href="/">Why this exists</a></p>
+</main>
+<script src="engine.js?v=1"></script>
+<script>
+const $=id=>document.getElementById(id);
+const sel=$('m_sel');
+Object.entries(Lasermath.materials).forEach(([k,v])=>{const o=document.createElement('option');o.value=k;o.textContent=v.label;sel.appendChild(o);});
+function show(id,txt){$(id).textContent=txt;}
+function pill(id,cls,txt){$(id).innerHTML='<span class="pill '+cls+'">'+txt+'</span>';}
+$('m_go').onclick=function(){
+  try{
+    const r=Lasermath.settings(sel.value,parseFloat($('m_t').value),parseFloat($('m_w').value));
+    if(r.neverCut){show('m_speed','never');show('m_passes','-');show('m_per','-');pill('m_pill','bad',r.verdict);show('m_note','');return;}
+    show('m_speed',r.speed+' mm/min');
+    pill('m_pill',r.verdict.startsWith('workable')?'ok':'warn',r.verdict);
+    show('m_passes',r.passes);
+    show('m_per',r.perPass+' mm');
+    show('m_note',r.note);
+  }catch(e){pill('m_pill','bad',e.message);show('m_speed','-');show('m_passes','-');show('m_per','-');show('m_note','');}
+};
+$('k_go').onclick=function(){
+  try{
+    const r=Lasermath.kerfFit(parseFloat($('k_k').value),$('k_kind').value);
+    show('k_big',r.edgeOffset+' mm');
+    show('k_note',r.note);
+  }catch(e){show('k_big','-');show('k_note',e.message);}
+};
+$('d_go').onclick=function(){
+  try{
+    const r=Lasermath.diagnose($('d_s').value,parseFloat($('d_w').value),parseFloat($('d_v').value),parseFloat($('d_p').value));
+    show('d_big',r.cause);
+    show('d_note',r.fix);
+  }catch(e){show('d_big','-');show('d_note',e.message);}
+};
+</script>
+</body>
+</html>
